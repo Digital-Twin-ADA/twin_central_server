@@ -3,12 +3,16 @@ package com.digitaltwin.central;
 import com.digitaltwin.central.dto.AlertRequestDto;
 import com.digitaltwin.central.model.Artist;
 import com.digitaltwin.central.model.LineupEvent;
+import com.digitaltwin.central.model.PointOfInterest;
+import com.digitaltwin.central.model.SpontaneousEvent;
 import com.digitaltwin.central.model.Stage;
 import com.digitaltwin.central.repository.AlertRepository;
 import com.digitaltwin.central.repository.ArtistRepository;
 import com.digitaltwin.central.repository.FestivalInfoRepository;
 import com.digitaltwin.central.repository.LineupEventRepository;
 import com.digitaltwin.central.repository.NotificationAttemptRepository;
+import com.digitaltwin.central.repository.PointOfInterestRepository;
+import com.digitaltwin.central.repository.SpontaneousEventRepository;
 import com.digitaltwin.central.repository.StageRepository;
 import com.digitaltwin.central.repository.WebhookSubscriberRepository;
 import com.digitaltwin.central.service.AlertService;
@@ -52,6 +56,12 @@ class CentralServerApplicationTests {
 	private LineupEventRepository lineupEventRepository;
 
 	@Autowired
+	private SpontaneousEventRepository spontaneousEventRepository;
+
+	@Autowired
+	private PointOfInterestRepository pointOfInterestRepository;
+
+	@Autowired
 	private FestivalInfoRepository festivalInfoRepository;
 
 	@Autowired
@@ -71,7 +81,9 @@ class CentralServerApplicationTests {
 		notificationAttemptRepository.deleteAll();
 		webhookSubscriberRepository.deleteAll();
 		alertRepository.deleteAll();
+		spontaneousEventRepository.deleteAll();
 		lineupEventRepository.deleteAll();
+		pointOfInterestRepository.deleteAll();
 		stageRepository.deleteAll();
 		festivalInfoRepository.deleteAll();
 		artistRepository.deleteAll();
@@ -248,6 +260,95 @@ class CentralServerApplicationTests {
 				.andExpect(jsonPath("$[0].title").value("Opening Pop Set"))
 				.andExpect(jsonPath("$[0].status").value("SCHEDULED"))
 				.andExpect(jsonPath("$[1].artistName").value("DJ Pulsewave"));
+	}
+
+	@Test
+	void spontaneousAndCurrentEventEndpointsWork() throws Exception {
+		Stage mainStage = stageRepository.save(new Stage("Main Stage", 1000, 0, false, "A1"));
+		Stage acousticStage = stageRepository.save(new Stage("Acoustic Stage", 800, 0, false, "B1"));
+		Artist artist = artistRepository.save(new Artist("Aria Nova", "Pop", "Festival pop artist.", "Romania", null));
+
+		OffsetDateTime now = OffsetDateTime.now();
+		lineupEventRepository.save(new LineupEvent(
+				artist,
+				mainStage,
+				now.minusMinutes(10),
+				now.plusMinutes(50),
+				"Main Stage Live Set",
+				"LIVE"
+		));
+
+		SpontaneousEvent spontaneousEvent = new SpontaneousEvent();
+		spontaneousEvent.setTitle("Surprise Guest");
+		spontaneousEvent.setDescription("Surprise guest at Acoustic Stage");
+		spontaneousEvent.setStage(acousticStage);
+		spontaneousEvent.setStartsAt(now.minusMinutes(5));
+		spontaneousEvent.setEndsAt(now.plusMinutes(30));
+		spontaneousEvent.setCreatedAt(now.minusMinutes(5));
+		spontaneousEvent.setStatus("LIVE");
+		spontaneousEventRepository.save(spontaneousEvent);
+
+		mockMvc.perform(post("/api/events/spontaneous")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "title": "1 + 1 Lemonade",
+								  "description": "Buy one lemonade and get one free at the bar.",
+								  "stageId": %s
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.type").value("spontaneous"))
+				.andExpect(jsonPath("$.title").value("1 + 1 Lemonade"))
+				.andExpect(jsonPath("$.stageId").value(mainStage.getId()))
+				.andExpect(jsonPath("$.status").value("LIVE"));
+
+		mockMvc.perform(get("/api/events/current"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(2)))
+				.andExpect(jsonPath("$[0].stageName").value("Main Stage"))
+				.andExpect(jsonPath("$[0].events", hasSize(2)))
+				.andExpect(jsonPath("$[0].events[0].type").value("lineup"))
+				.andExpect(jsonPath("$[1].stageName").value("Acoustic Stage"))
+				.andExpect(jsonPath("$[1].events", hasSize(1)))
+				.andExpect(jsonPath("$[1].events[0].type").value("spontaneous"));
+	}
+
+	@Test
+	void pointsOfInterestEndpointsReturnFilteredLocationsAndDetails() throws Exception {
+		PointOfInterest restaurant = pointOfInterestRepository.save(new PointOfInterest(
+				"Vegan Garden",
+				"RESTAURANT",
+				"Plant-based meals near Main Stage.",
+				44.4391,
+				26.0961,
+				"A1",
+				"10:00-02:00"
+		));
+
+		pointOfInterestRepository.save(new PointOfInterest(
+				"Craft Beer Bar",
+				"BAR",
+				"Local craft beer and soft drinks.",
+				44.4392,
+				26.0962,
+				"A2",
+				"12:00-03:00"
+		));
+
+		mockMvc.perform(get("/api/points-of-interest").param("type", "restaurant"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)))
+				.andExpect(jsonPath("$[0].name").value("Vegan Garden"))
+				.andExpect(jsonPath("$[0].type").value("RESTAURANT"))
+				.andExpect(jsonPath("$[0].latitude").value(44.4391))
+				.andExpect(jsonPath("$[0].longitude").value(26.0961))
+				.andExpect(jsonPath("$[0].zoneCode").value("A1"));
+
+		mockMvc.perform(get("/api/points-of-interest/{id}", restaurant.getId()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Vegan Garden"))
+				.andExpect(jsonPath("$.openingHours").value("10:00-02:00"));
 	}
 
 	@Test

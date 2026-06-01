@@ -1,5 +1,6 @@
 package com.digitaltwin.central.controller;
 
+import com.digitaltwin.central.dto.CurrentStageEventsDto;
 import com.digitaltwin.central.dto.EventResponseDto;
 import com.digitaltwin.central.dto.SpontaneousEventRequestDto;
 import com.digitaltwin.central.model.LineupEvent;
@@ -88,6 +89,56 @@ public class EventsController {
         }
 
         return result;
+    }
+
+    @GetMapping("/current")
+    public List<CurrentStageEventsDto> getCurrentEventsByStage() {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<LineupEvent> currentLineup = lineupRepo.findByStartsAtLessThanEqualAndEndsAtGreaterThan(now, now);
+        List<SpontaneousEvent> currentSpontaneous = spontaneousRepo.findByStartsAtLessThanEqualAndEndsAtGreaterThan(now, now);
+
+        return stageRepo.findAllByOrderByIdAsc().stream()
+                .map(stage -> {
+                    List<EventResponseDto> events = new ArrayList<>();
+
+                    for (LineupEvent e : currentLineup) {
+                        if (e.getStage().getId().equals(stage.getId())) {
+                            events.add(new EventResponseDto(
+                                    e.getId(),
+                                    e.getArtist().getId(),
+                                    e.getArtist().getName(),
+                                    e.getArtist().getGenre(),
+                                    e.getStage().getId(),
+                                    e.getStage().getName(),
+                                    e.getStage().getZoneCode(),
+                                    e.getStartsAt(),
+                                    e.getEndsAt(),
+                                    e.getTitle(),
+                                    e.getStatus()
+                            ));
+                        }
+                    }
+
+                    for (SpontaneousEvent s : currentSpontaneous) {
+                        Stage st = s.getStage();
+                        if (st != null && st.getId().equals(stage.getId())) {
+                            events.add(new EventResponseDto(
+                                    s.getId(),
+                                    s.getTitle(),
+                                    s.getDescription(),
+                                    st.getId(),
+                                    st.getName(),
+                                    st.getZoneCode(),
+                                    s.getStartsAt(),
+                                    s.getEndsAt(),
+                                    s.getStatus()
+                            ));
+                        }
+                    }
+
+                    return new CurrentStageEventsDto(stage.getId(), stage.getName(), stage.getZoneCode(), events);
+                })
+                .toList();
     }
 
     @PostMapping("/spontaneous")
