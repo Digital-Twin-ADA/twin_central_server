@@ -13,6 +13,9 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Parameter;
 
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -26,10 +29,9 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import io.swagger.v3.oas.annotations.Hidden;
 
-@Hidden
 @RestController
+@Tag(name = "Events", description = "Manage festival events: list, create, update, and stream live events. Use to display schedules, create spontaneous events, and keep clients updated.")
 @RequestMapping("/api/events")
 public class EventsController {
 
@@ -47,6 +49,7 @@ public class EventsController {
     }
 
     @GetMapping("/live")
+    @Operation(summary = "Get live events", description = "Returns events that are currently in progress across all stages. Use for live displays or notifications to attendees and staff.")
     public List<EventResponseDto> getLiveEvents() {
         OffsetDateTime now = OffsetDateTime.now();
         List<EventResponseDto> result = new ArrayList<>();
@@ -92,6 +95,7 @@ public class EventsController {
     }
 
     @GetMapping("/current")
+    @Operation(summary = "Get current events by stage", description = "Return currently running events grouped by stage. Use to build per-stage live views or dashboards.")
     public List<CurrentStageEventsDto> getCurrentEventsByStage() {
         OffsetDateTime now = OffsetDateTime.now();
         List<LineupEvent> currentLineup = lineupRepo.findByStartsAtLessThanEqualAndEndsAtGreaterThan(now, now);
@@ -142,7 +146,8 @@ public class EventsController {
     }
 
     @PostMapping("/spontaneous")
-    public ResponseEntity<?> createSpontaneous(@Valid @RequestBody SpontaneousEventRequestDto req) {
+    @Operation(summary = "Create spontaneous event", description = "Create a one-off or ad-hoc event. Use when adding temporary shows or announcements; publishes the event to websocket topic /topic/events.")
+    public ResponseEntity<?> createSpontaneous(@Valid @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Spontaneous event payload") @RequestBody SpontaneousEventRequestDto req) {
         Stage stage = null;
         if (req.getStageId() != null) {
             Optional<Stage> opt = stageRepo.findById(req.getStageId());
@@ -185,7 +190,8 @@ public class EventsController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getEventById(@PathVariable Long id) {
+    @Operation(summary = "Get event by ID", description = "Fetch a lineup or spontaneous event by its ID. Use to display detailed event information.")
+    public ResponseEntity<?> getEventById(@Parameter(description = "Event ID") @PathVariable Long id) {
         // Try lineup events first
         Optional<LineupEvent> leOpt = lineupRepo.findById(id);
         if (leOpt.isPresent()) {
@@ -229,7 +235,8 @@ public class EventsController {
     }
 
     @PutMapping("/spontaneous/{id}")
-    public ResponseEntity<?> updateSpontaneous(@PathVariable Long id, @Valid @RequestBody SpontaneousEventRequestDto req) {
+    @Operation(summary = "Update spontaneous event", description = "Replace an existing spontaneous event. Use for full updates to title, description, times, stage, or status.")
+    public ResponseEntity<?> updateSpontaneous(@Parameter(description = "ID of the spontaneous event") @PathVariable Long id, @Valid @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Spontaneous event update payload") @RequestBody SpontaneousEventRequestDto req) {
         Optional<SpontaneousEvent> seOpt = spontaneousRepo.findById(id);
         if (seOpt.isEmpty()) return ResponseEntity.notFound().build();
         SpontaneousEvent s = seOpt.get();
@@ -266,7 +273,8 @@ public class EventsController {
     }
 
     @PatchMapping("/spontaneous/{id}")
-    public ResponseEntity<?> patchSpontaneous(@PathVariable Long id, @RequestBody Map<String, Object> updates) {
+    @Operation(summary = "Patch spontaneous event", description = "Partially update fields of a spontaneous event. Use for small edits without replacing the whole resource.")
+    public ResponseEntity<?> patchSpontaneous(@Parameter(description = "ID of spontaneous event") @PathVariable Long id, @RequestBody Map<String, Object> updates) {
         Optional<SpontaneousEvent> seOpt = spontaneousRepo.findById(id);
         if (seOpt.isEmpty()) return ResponseEntity.notFound().build();
         SpontaneousEvent s = seOpt.get();
@@ -307,7 +315,8 @@ public class EventsController {
     }
 
     @DeleteMapping("/spontaneous/{id}")
-    public ResponseEntity<?> deleteSpontaneous(@PathVariable Long id) {
+    @Operation(summary = "Delete spontaneous event", description = "Delete a spontaneous event by ID. Use when cancelling or removing an ad-hoc event; notifies websocket subscribers.")
+    public ResponseEntity<?> deleteSpontaneous(@Parameter(description = "ID of spontaneous event to delete") @PathVariable Long id) {
         Optional<SpontaneousEvent> seOpt = spontaneousRepo.findById(id);
         if (seOpt.isEmpty()) return ResponseEntity.notFound().build();
         spontaneousRepo.deleteById(id);
@@ -316,6 +325,7 @@ public class EventsController {
     }
 
     @GetMapping
+    @Operation(summary = "List all events", description = "List both lineup and spontaneous events ordered by start time. Use for full schedule views.")
     public List<EventResponseDto> listAll() {
         List<EventResponseDto> out = new ArrayList<>();
         for (LineupEvent e : lineupRepo.findAllByOrderByStartsAtAsc()) {
@@ -346,8 +356,8 @@ public class EventsController {
         return out;
     }
 
-    @Hidden
     @GetMapping("/spontaneous")
+    @Operation(summary = "List spontaneous events", description = "Return paginated spontaneous events with optional filtering by stage, status, or time range. Use for admin listing and APIs.")
     public ResponseEntity<?> listSpontaneous(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
