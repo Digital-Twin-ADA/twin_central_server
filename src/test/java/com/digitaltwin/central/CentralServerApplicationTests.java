@@ -3,6 +3,7 @@ package com.digitaltwin.central;
 import com.digitaltwin.central.dto.AlertRequestDto;
 import com.digitaltwin.central.model.Artist;
 import com.digitaltwin.central.model.LineupEvent;
+import com.digitaltwin.central.model.ParticipantLocation;
 import com.digitaltwin.central.model.PointOfInterest;
 import com.digitaltwin.central.model.SpontaneousEvent;
 import com.digitaltwin.central.model.Stage;
@@ -11,6 +12,7 @@ import com.digitaltwin.central.repository.ArtistRepository;
 import com.digitaltwin.central.repository.FestivalInfoRepository;
 import com.digitaltwin.central.repository.LineupEventRepository;
 import com.digitaltwin.central.repository.NotificationAttemptRepository;
+import com.digitaltwin.central.repository.ParticipantLocationRepository;
 import com.digitaltwin.central.repository.PointOfInterestRepository;
 import com.digitaltwin.central.repository.SpontaneousEventRepository;
 import com.digitaltwin.central.repository.StageRepository;
@@ -33,6 +35,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -62,6 +65,9 @@ class CentralServerApplicationTests {
 	private PointOfInterestRepository pointOfInterestRepository;
 
 	@Autowired
+	private ParticipantLocationRepository participantLocationRepository;
+
+	@Autowired
 	private FestivalInfoRepository festivalInfoRepository;
 
 	@Autowired
@@ -83,6 +89,7 @@ class CentralServerApplicationTests {
 		alertRepository.deleteAll();
 		spontaneousEventRepository.deleteAll();
 		lineupEventRepository.deleteAll();
+		participantLocationRepository.deleteAll();
 		pointOfInterestRepository.deleteAll();
 		stageRepository.deleteAll();
 		festivalInfoRepository.deleteAll();
@@ -349,6 +356,81 @@ class CentralServerApplicationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name").value("Vegan Garden"))
 				.andExpect(jsonPath("$.openingHours").value("10:00-02:00"));
+	}
+
+	@Test
+	void participantLocationEndpointsIngestLocationsAndReturnHeatmapPoints() throws Exception {
+		Stage mainStage = stageRepository.save(new Stage("Main Stage", 1000, 0, false, "A1"));
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-123",
+								  "stageId": %s,
+								  "latitude": 45.7489,
+								  "longitude": 21.2087,
+								  "zoneCode": "A1"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.participantId").value("user-123"))
+				.andExpect(jsonPath("$.stageId").value(mainStage.getId()))
+				.andExpect(jsonPath("$.stageName").value("Main Stage"))
+				.andExpect(jsonPath("$.latitude").value(45.7489))
+				.andExpect(jsonPath("$.longitude").value(21.2087))
+				.andExpect(jsonPath("$.zoneCode").value("A1"));
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-123",
+								  "stageId": %s,
+								  "latitude": 45.7499,
+								  "longitude": 21.2097,
+								  "zoneCode": "A2"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.participantId").value("user-123"))
+				.andExpect(jsonPath("$.latitude").value(45.7499))
+				.andExpect(jsonPath("$.longitude").value(21.2097))
+				.andExpect(jsonPath("$.zoneCode").value("A2"));
+
+		ParticipantLocation olderLocation = new ParticipantLocation();
+		olderLocation.setParticipantId("old-user");
+		olderLocation.setLatitude(45.7000);
+		olderLocation.setLongitude(21.2000);
+		olderLocation.setRecordedAt(OffsetDateTime.now().minusMinutes(90));
+		participantLocationRepository.save(olderLocation);
+
+		mockMvc.perform(get("/api/participant-locations"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(2)));
+
+		mockMvc.perform(get("/api/participant-locations/heatmap").param("minutes", "30"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)))
+				.andExpect(jsonPath("$[0].latitude").value(45.7499))
+				.andExpect(jsonPath("$[0].longitude").value(21.2097))
+				.andExpect(jsonPath("$[0].stageId").value(mainStage.getId()))
+				.andExpect(jsonPath("$[0].stageName").value("Main Stage"))
+				.andExpect(jsonPath("$[0].zoneCode").value("A2"))
+				.andExpect(jsonPath("$[0].weight").value(1));
+	}
+
+	@Test
+	void openApiDocsIncludeParticipantLocationEndpoints() throws Exception {
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paths['/api/participant-locations']").exists())
+				.andExpect(jsonPath("$.paths['/api/participant-locations/heatmap']").exists())
+				.andExpect(jsonPath("$.tags[?(@.name == 'Participant Locations')].description").value(hasSize(1)))
+				.andExpect(jsonPath("$.paths['/api/participant-locations'].post.summary")
+						.value("Submit participant location"))
+				.andExpect(jsonPath("$.paths['/api/participant-locations/heatmap'].get.description")
+						.value(containsString("heatmap-ready latest participant location points")));
 	}
 
 	@Test
