@@ -15,13 +15,18 @@ import java.util.List;
 @Service
 public class ParticipantLocationService {
 
+    private static final int LIVE_HEATMAP_WINDOW_MINUTES = 10;
+
     private final ParticipantLocationRepository participantLocationRepository;
     private final StageRepository stageRepository;
+    private final HeatmapPublisher heatmapPublisher;
 
     public ParticipantLocationService(ParticipantLocationRepository participantLocationRepository,
-                                      StageRepository stageRepository) {
+                                      StageRepository stageRepository,
+                                      HeatmapPublisher heatmapPublisher) {
         this.participantLocationRepository = participantLocationRepository;
         this.stageRepository = stageRepository;
+        this.heatmapPublisher = heatmapPublisher;
     }
 
     public ParticipantLocationResponseDto recordLocation(ParticipantLocationRequestDto dto) {
@@ -40,7 +45,9 @@ public class ParticipantLocationService {
         location.setZoneCode(dto.getZoneCode());
         location.setRecordedAt(dto.getRecordedAt() != null ? dto.getRecordedAt() : OffsetDateTime.now());
 
-        return toResponse(participantLocationRepository.save(location));
+        ParticipantLocation saved = participantLocationRepository.save(location);
+        publishLiveHeatmap();
+        return toResponse(saved);
     }
 
     public List<ParticipantLocationResponseDto> getLocations(Integer minutes) {
@@ -84,5 +91,13 @@ public class ParticipantLocationService {
                 location.getZoneCode(),
                 location.getRecordedAt()
         );
+    }
+
+    private void publishLiveHeatmap() {
+        try {
+            heatmapPublisher.publish(getHeatmap(LIVE_HEATMAP_WINDOW_MINUTES));
+        } catch (Exception ignored) {
+            // Location ingestion should continue even if WebSocket clients are unavailable.
+        }
     }
 }

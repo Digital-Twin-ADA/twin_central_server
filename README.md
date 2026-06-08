@@ -160,3 +160,65 @@ This should send a webhook to the registered webapp URL.
 ### Retry Behavior
 
 The central server retries failed webhook deliveries up to three attempts. It retries if the request fails or if the web app returns a `5xx` response. Delivery attempts are stored in the `notification_attempts` table.
+
+## Live Heatmap WebSocket
+
+The central server also supports live heatmap updates through STOMP WebSockets.
+
+WebSocket endpoint:
+
+```text
+https://twin-central-server.onrender.com/ws
+```
+
+Heatmap topic:
+
+```text
+/topic/heatmap
+```
+
+The mobile app or stage server sends participant locations to the central server:
+
+```http
+POST https://twin-central-server.onrender.com/api/participant-locations
+Content-Type: application/json
+
+{
+  "participantId": "user-123",
+  "stageId": 1,
+  "latitude": 45.7489,
+  "longitude": 21.2087,
+  "zoneCode": "A1"
+}
+```
+
+After each saved location, the central server broadcasts the latest heatmap snapshot from the last 10 minutes to `/topic/heatmap`.
+
+Example WebSocket message:
+
+```json
+[
+  {
+    "latitude": 45.7489,
+    "longitude": 21.2087,
+    "stageId": 1,
+    "stageName": "Main Stage",
+    "zoneCode": "A1",
+    "recordedAt": "2026-06-08T14:30:00+03:00",
+    "weight": 1
+  }
+]
+```
+
+The web app can also fetch the current heatmap without WebSockets:
+
+```http
+GET https://twin-central-server.onrender.com/api/participant-locations/heatmap?minutes=10
+```
+
+For the dashboard, use both:
+
+1. Fetch `GET /api/participant-locations/heatmap?minutes=10` when the page opens.
+2. Connect to `/ws`.
+3. Subscribe to `/topic/heatmap`.
+4. Replace or refresh the displayed heatmap whenever a new message arrives.
