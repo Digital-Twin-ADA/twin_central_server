@@ -250,6 +250,39 @@ Content-Type: application/json
 }
 ```
 
+For simulations, the team can send multiple participant locations at once:
+
+```http
+POST https://twin-central-server.onrender.com/api/participant-locations/bulk
+Content-Type: application/json
+
+[
+  {
+    "participantId": "user-001",
+    "stageId": 1,
+    "latitude": 45.7489,
+    "longitude": 21.2087,
+    "zoneCode": "A1"
+  },
+  {
+    "participantId": "user-002",
+    "stageId": 1,
+    "latitude": 45.7491,
+    "longitude": 21.2089,
+    "zoneCode": "A1"
+  },
+  {
+    "participantId": "user-003",
+    "stageId": 2,
+    "latitude": 45.7501,
+    "longitude": 21.2102,
+    "zoneCode": "B1"
+  }
+]
+```
+
+The bulk endpoint is useful for testing the Web App heatmap without the Android app. The central server saves all submitted locations and broadcasts one updated heatmap snapshot to `/topic/heatmap`.
+
 After each saved location, the central server broadcasts the latest heatmap snapshot from the last 10 minutes to `/topic/heatmap`.
 
 Example WebSocket message:

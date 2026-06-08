@@ -34,6 +34,16 @@ public class ParticipantLocationController {
         return participantLocationService.recordLocation(dto);
     }
 
+    @PostMapping("/bulk")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "Submit multiple participant locations",
+            description = "Receives multiple participant locations at once for simulations or batch updates. The central server saves all locations and broadcasts one live heatmap update."
+    )
+    public List<ParticipantLocationResponseDto> recordLocations(@Valid @RequestBody List<@Valid ParticipantLocationRequestDto> dtos) {
+        return participantLocationService.recordLocations(dtos);
+    }
+
     @GetMapping
     @Operation(
             summary = "List participant locations",

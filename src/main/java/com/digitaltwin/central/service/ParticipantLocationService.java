@@ -30,6 +30,21 @@ public class ParticipantLocationService {
     }
 
     public ParticipantLocationResponseDto recordLocation(ParticipantLocationRequestDto dto) {
+        ParticipantLocation saved = saveLocation(dto);
+        publishLiveHeatmap();
+        return toResponse(saved);
+    }
+
+    public List<ParticipantLocationResponseDto> recordLocations(List<ParticipantLocationRequestDto> dtos) {
+        List<ParticipantLocationResponseDto> savedLocations = dtos.stream()
+                .map(this::saveLocation)
+                .map(this::toResponse)
+                .toList();
+        publishLiveHeatmap();
+        return savedLocations;
+    }
+
+    private ParticipantLocation saveLocation(ParticipantLocationRequestDto dto) {
         Stage stage = null;
         if (dto.getStageId() != null) {
             stage = stageRepository.findById(dto.getStageId())
@@ -45,9 +60,7 @@ public class ParticipantLocationService {
         location.setZoneCode(dto.getZoneCode());
         location.setRecordedAt(dto.getRecordedAt() != null ? dto.getRecordedAt() : OffsetDateTime.now());
 
-        ParticipantLocation saved = participantLocationRepository.save(location);
-        publishLiveHeatmap();
-        return toResponse(saved);
+        return participantLocationRepository.save(location);
     }
 
     public List<ParticipantLocationResponseDto> getLocations(Integer minutes) {
