@@ -183,11 +183,34 @@ Available topics:
 
 The web app should subscribe to `/topic/alerts` to receive alerts in real time.
 
+The web app can also create alerts through WebSocket by sending messages to `/app/alerts`.
+
+Alert WebSocket directions:
+
+```text
+Web App -> Central Server: /app/alerts
+Central Server -> Web App: /topic/alerts
+```
+
+Example message sent by the web app to `/app/alerts`:
+
+```json
+{
+  "stageId": 1,
+  "type": "SAFETY",
+  "message": "Manual alert sent by admin",
+  "severity": "HIGH"
+}
+```
+
+The central server saves this alert, then broadcasts the saved alert to `/topic/alerts`.
+
 This topic receives messages when:
 
 1. A new alert is created with `POST /api/alerts`.
 2. An alert is resolved with `POST /api/alerts/{id}/resolve`.
-3. The central server creates an automatic `OVER_CROWD` alert from telemetry.
+3. A new alert is created through WebSocket with `/app/alerts`.
+4. The central server creates an automatic `OVER_CROWD` alert from telemetry.
 
 Example alert message:
 
