@@ -7,4 +7,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecificationExecutor<Alert> {
+    boolean existsByStageIdAndTypeAndResolvedFalse(Long stageId, String type);
 }

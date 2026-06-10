@@ -421,6 +421,161 @@ class CentralServerApplicationTests {
 	}
 
 	@Test
+	void participantLocationsTriggerOvercrowdAlertWhenStageCapacityIsHit() throws Exception {
+		Stage mainStage = stageRepository.save(new Stage("Main Stage", 2, 0, false, "A1"));
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-1",
+								  "stageId": %s,
+								  "latitude": 45.7489,
+								  "longitude": 21.2087,
+								  "zoneCode": "A1"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		assertThat(stageRepository.findById(mainStage.getId()).orElseThrow().getCurrentCrowd()).isEqualTo(1);
+		assertThat(alertRepository.findAll()).isEmpty();
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-2",
+								  "stageId": %s,
+								  "latitude": 45.7490,
+								  "longitude": 21.2088,
+								  "zoneCode": "A1"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		Stage updatedStage = stageRepository.findById(mainStage.getId()).orElseThrow();
+		assertThat(updatedStage.getCurrentCrowd()).isEqualTo(2);
+		assertThat(updatedStage.isOvercrowded()).isTrue();
+		assertThat(alertRepository.findAll())
+				.singleElement()
+				.satisfies(alert -> {
+					assertThat(alert.getStage().getId()).isEqualTo(mainStage.getId());
+					assertThat(alert.getType()).isEqualTo("OVER_CROWD");
+					assertThat(alert.getSeverity()).isEqualTo("HIGH");
+					assertThat(alert.getMessage()).contains("Main Stage is overcrowded: 2/2");
+				});
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-2",
+								  "stageId": %s,
+								  "latitude": 45.7500,
+								  "longitude": 21.2098,
+								  "zoneCode": "A1"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		assertThat(alertRepository.findAll()).hasSize(1);
+	}
+
+	@Test
+	void participantLocationsCreateMissingActiveOvercrowdAlertWithoutDuplicates() throws Exception {
+		Stage mainStage = stageRepository.save(new Stage("Main Stage", 2, 2, true, "A1"));
+
+		mockMvc.perform(post("/api/participant-locations/bulk")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								[
+								  {
+								    "participantId": "user-1",
+								    "stageId": %s,
+								    "latitude": 45.7489,
+								    "longitude": 21.2087,
+								    "zoneCode": "A1"
+								  },
+								  {
+								    "participantId": "user-2",
+								    "stageId": %s,
+								    "latitude": 45.7490,
+								    "longitude": 21.2088,
+								    "zoneCode": "A1"
+								  }
+								]
+								""".formatted(mainStage.getId(), mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		assertThat(alertRepository.findAll())
+				.singleElement()
+				.satisfies(alert -> {
+					assertThat(alert.getStage().getId()).isEqualTo(mainStage.getId());
+					assertThat(alert.getType()).isEqualTo("OVER_CROWD");
+					assertThat(alert.isResolved()).isFalse();
+				});
+
+		mockMvc.perform(post("/api/participant-locations")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "participantId": "user-2",
+								  "stageId": %s,
+								  "latitude": 45.7500,
+								  "longitude": 21.2098,
+								  "zoneCode": "A1"
+								}
+								""".formatted(mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		assertThat(alertRepository.findAll()).hasSize(1);
+	}
+
+	@Test
+	void participantLocationsTriggerOvercrowdAlertWhenAlreadyFullCrowdIncreases() throws Exception {
+		Stage mainStage = stageRepository.save(new Stage("Main Stage", 2, 2, true, "A1"));
+
+		AlertRequestDto existingAlert = new AlertRequestDto();
+		existingAlert.setStageId(mainStage.getId());
+		existingAlert.setType("OVER_CROWD");
+		existingAlert.setSeverity("HIGH");
+		existingAlert.setMessage("Existing overcrowd alert");
+		alertService.createAlert(existingAlert);
+
+		mockMvc.perform(post("/api/participant-locations/bulk")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								[
+								  {
+								    "participantId": "user-1",
+								    "stageId": %s,
+								    "latitude": 45.7489,
+								    "longitude": 21.2087,
+								    "zoneCode": "A1"
+								  },
+								  {
+								    "participantId": "user-2",
+								    "stageId": %s,
+								    "latitude": 45.7490,
+								    "longitude": 21.2088,
+								    "zoneCode": "A1"
+								  },
+								  {
+								    "participantId": "user-3",
+								    "stageId": %s,
+								    "latitude": 45.7491,
+								    "longitude": 21.2089,
+								    "zoneCode": "A1"
+								  }
+								]
+								""".formatted(mainStage.getId(), mainStage.getId(), mainStage.getId())))
+				.andExpect(status().isCreated());
+
+		assertThat(stageRepository.findById(mainStage.getId()).orElseThrow().getCurrentCrowd()).isEqualTo(3);
+		assertThat(alertRepository.findAll()).hasSize(2);
+	}
+
+	@Test
 	void openApiDocsIncludeParticipantLocationEndpoints() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
@@ -465,12 +620,21 @@ class CentralServerApplicationTests {
 			assertThat(webhook.body()).contains("\"type\":\"TEST\"");
 			assertThat(webhook.body()).contains("\"createdAt\":");
 			assertThat(webhook.signature()).startsWith("sha256=");
-			assertThat(notificationAttemptRepository.findAll())
+			assertThat(waitForNotificationAttempts(1))
 					.singleElement()
 					.satisfies(attempt -> assertThat(attempt.getStatus()).isEqualTo("200"));
 		} finally {
 			server.stop(0);
 		}
+	}
+
+	private java.util.List<com.digitaltwin.central.model.NotificationAttempt> waitForNotificationAttempts(int expectedSize) throws InterruptedException {
+		java.util.List<com.digitaltwin.central.model.NotificationAttempt> attempts = notificationAttemptRepository.findAll();
+		for (int i = 0; i < 20 && attempts.size() < expectedSize; i++) {
+			Thread.sleep(100);
+			attempts = notificationAttemptRepository.findAll();
+		}
+		return attempts;
 	}
 
 	private HttpServer startWebhookServer(LinkedBlockingQueue<ReceivedWebhook> received) throws IOException {
